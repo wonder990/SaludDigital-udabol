@@ -60,6 +60,35 @@ export function km(a, b) {
 }
 
 /**
+ * Ruta por calles con OSRM.
+ *
+ * @param {[number,number]} a origen [lat,lng]
+ * @param {[number,number]} b destino [lat,lng]
+ * @returns {Promise<{puntos:[number,number][], km:number, min:number}|null>}
+ *   null si OSRM no responde (el llamador decide el respaldo).
+ */
+export async function rutaOsrm(a, b, timeout = 7000) {
+  try {
+    const url =
+      'https://router.project-osrm.org/route/v1/driving/' +
+      `${a[1]},${a[0]};${b[1]},${b[0]}` +
+      '?overview=full&geometries=geojson';
+    const r = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const t = j?.routes?.[0];
+    if (!t?.geometry?.coordinates?.length) return null;
+    return {
+      puntos: t.geometry.coordinates.map(([x, y]) => [y, x]),
+      km: t.distance / 1000,
+      min: Math.max(1, Math.round(t.duration / 60)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Asignación inteligente: médico libre más cercano (priorizando especialidad)
  * y ruta por calles con OSRM.
  *

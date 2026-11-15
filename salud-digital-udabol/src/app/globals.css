@@ -69,6 +69,58 @@
     @apply lg:grid-cols-[300px_1fr_280px];
   }
 
+  /* Panel del paciente: solicitudes | mapa | centros de salud */
+  .m3p {
+    @apply lg:grid-cols-[320px_minmax(0,1fr)_340px] lg:items-start;
+  }
+
+  /* En móvil el orden es: solicitud → mapa → centros → mis solicitudes. */
+  @media (max-width: 1023px) {
+    .m3p > .z-form {
+      display: contents;
+    }
+
+    .z-form > .card:first-child {
+      order: 1;
+    }
+
+    .z-map {
+      order: 2;
+    }
+
+    .z-centros {
+      order: 3;
+    }
+
+    .z-form > .card:last-child {
+      order: 4;
+    }
+  }
+
+  .panel-centros {
+    @apply mt-2 flex flex-col gap-2;
+  }
+
+  .bloque {
+    @apply mt-1 flex flex-col gap-2 border-t border-slate-200 pt-2.5;
+  }
+
+  .bloque h3 {
+    @apply m-0 text-[11px] font-bold uppercase tracking-wide text-slate-500;
+  }
+
+  .bloque .row {
+    @apply flex-col;
+  }
+
+  .bloque .row > * {
+    @apply w-full flex-none;
+  }
+
+  .lista-centros {
+    @apply max-h-[46vh] overflow-y-auto pr-0.5;
+  }
+
   aside,
   .center {
     @apply flex min-w-0 flex-col gap-4;
@@ -146,6 +198,10 @@
     @apply h-[380px] rounded-xl border border-slate-200 shadow-sm lg:h-[480px];
   }
 
+  .z-map #map {
+    @apply lg:h-[560px];
+  }
+
   .log {
     @apply max-h-44 min-h-[60px] overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-xs leading-6 text-slate-200;
   }
@@ -196,6 +252,44 @@
 
   .pin.sel {
     @apply bg-red-600;
+  }
+
+  .pin.hosp {
+    @apply bg-rose-600;
+  }
+
+  .pin.csalud {
+    @apply bg-emerald-600;
+  }
+
+  .pin.poli {
+    @apply bg-sky-600;
+  }
+
+  /* Selector de tipo de centro de salud */
+  .chips {
+    @apply grid grid-cols-2 gap-1.5;
+  }
+
+  .chip {
+    @apply truncate rounded-full border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50;
+  }
+
+  .chip.on {
+    @apply border-blue-700 bg-blue-700 text-white hover:bg-blue-700;
+  }
+
+  .enlace-btn {
+    @apply inline-flex flex-1 items-center justify-center rounded-lg border border-blue-700 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50;
+  }
+
+  .item.ruta {
+    @apply border-blue-300 bg-blue-50;
+  }
+
+  /* Botón dentro del popup de Leaflet */
+  .pop-ruta {
+    @apply mt-1 w-full cursor-pointer rounded-md bg-blue-700 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-800;
   }
 
   /* Bandera de Bolivia dibujada con CSS (los emojis de bandera no se ven en Windows). */

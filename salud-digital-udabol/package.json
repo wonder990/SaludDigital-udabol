@@ -1,0 +1,30 @@
+{
+  "name": "salud-digital-udabol",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SaludMóvil Bolivia: atención médica domiciliaria con asignación inteligente y seguimiento SIG en tiempo real.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "check": "npm run lint && npm run build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
+    "leaflet": "^1.9.4",
+    "next": "16.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.6",
+    "tailwindcss": "^4"
+  }
+}

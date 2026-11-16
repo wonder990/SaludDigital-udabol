@@ -93,8 +93,12 @@ export default function Login() {
   const [diag, setDiag] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [redirigiendo, setRedirigiendo] = useState(false);
+  const [correo, setCorreo] = useState(false); // formulario de correo y contraseña
+  const [cred, setCred] = useState({ email: '', pass: '' });
+  const [entrando, setEntrando] = useState(false);
 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const setC = (k) => (e) => setCred((x) => ({ ...x, [k]: e.target.value }));
   const d = useCallback((t) => setDiag((x) => x + t + '\n'), []);
   const err = useCallback((t) => setM({ t, ok: false }), []);
 
@@ -307,6 +311,29 @@ export default function Login() {
     };
   }, [d, err, resolver]);
 
+  // Ingreso con cuentas demo (correo y contraseña creadas en Supabase).
+  async function entrarCorreo(e) {
+    e.preventDefault();
+    setEntrando(true);
+    setM({ t: '', ok: false });
+
+    const { error } = await sb.auth.signInWithPassword({
+      email: cred.email.trim(),
+      password: cred.pass,
+    });
+
+    if (error) {
+      const texto =
+        error.message === 'Invalid login credentials'
+          ? 'Correo o contraseña incorrectos.'
+          : error.message;
+      err(texto);
+      setEntrando(false);
+      return;
+    }
+    // Sin error: el evento SIGNED_IN dispara resolver() y redirige al panel.
+  }
+
   function google() {
     setM({ t: '', ok: false });
 
@@ -493,8 +520,65 @@ export default function Login() {
                   : 'Ingresar con Google'}
             </button>
 
+            {!reg && !correo && (
+              <button
+                type="button"
+                className="ghost small"
+                onClick={() => {
+                  setCorreo(true);
+                  setM({ t: '', ok: false });
+                }}
+              >
+                Ingresar con correo y contraseña
+              </button>
+            )}
+
+            {!reg && correo && (
+              <form onSubmit={entrarCorreo} className="flex flex-col gap-2">
+                <label className="sr-only" htmlFor="correo">
+                  Correo
+                </label>
+                <input
+                  id="correo"
+                  type="email"
+                  placeholder="Correo"
+                  autoComplete="username"
+                  value={cred.email}
+                  onChange={setC('email')}
+                  required
+                />
+                <label className="sr-only" htmlFor="contra">
+                  Contraseña
+                </label>
+                <input
+                  id="contra"
+                  type="password"
+                  placeholder="Contraseña"
+                  autoComplete="current-password"
+                  value={cred.pass}
+                  onChange={setC('pass')}
+                  required
+                />
+                <button type="submit" disabled={entrando}>
+                  {entrando ? 'Entrando…' : 'Ingresar'}
+                </button>
+                <button
+                  type="button"
+                  className="ghost small"
+                  onClick={() => {
+                    setCorreo(false);
+                    setM({ t: '', ok: false });
+                  }}
+                >
+                  Cancelar
+                </button>
+              </form>
+            )}
+
             <p className="hint text-center">
-              El acceso se realiza con tu cuenta de Google.
+              {reg
+                ? 'El registro se realiza con tu cuenta de Google.'
+                : 'Ingresa con tu cuenta de Google o con tu cuenta de correo.'}
             </p>
           </div>
         )}

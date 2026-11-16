@@ -6,14 +6,12 @@ import {
   useGuard,
   useMapa,
   useVivo,
-  useMedicos,
   useUbicacion,
   icono,
   dibujarRuta,
 } from '../../components/hooks';
 import { sb } from '../../lib/supabase';
 import {
-  asignar,
   ESTADO,
   URG,
   ll,
@@ -23,6 +21,8 @@ import {
   km,
   esc,
   rutaOsrm,
+  TIPO_EMERG,
+  tipoEmerg,
 } from '../../lib/geo';
 import { CENTROS, TIPOS } from '../../lib/centros';
 
@@ -36,8 +36,10 @@ export default function Paciente() {
   const [casos, setCasos] = useState([]);
   const [msg, setMsg] = useState({ t: '', ok: false });
   const [cuadro, setCuadro] = useState('');
-  const [esp, setEsp] = useState('Cualquiera');
+  const [tipo, setTipo] = useState('transito');
   const [urg, setUrg] = useState('2');
+  const [foto, setFoto] = useState(null);
+  const [fotoVista, setFotoVista] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [centros, setCentros] = useState(CENTROS);
   const [verCentros, setVerCentros] = useState(true);
@@ -53,7 +55,6 @@ export default function Paciente() {
   const pj = useRef('');
   const enviandoRef = useRef(false);
 
-  useMedicos(mp, null, !!s);
   const u = useUbicacion(mp, setPos, true, !!s);
 
   useVivo(
@@ -246,7 +247,7 @@ export default function Paciente() {
 
     const texto = cuadro.trim();
     if (texto.length < 3) {
-      setMsg({ t: 'Describe brevemente tus síntomas o el motivo de consulta.', ok: false });
+      setMsg({ t: 'Describe brevemente qué está pasando en la emergencia.', ok: false });
       return;
     }
     if (!pos) {
@@ -259,15 +260,36 @@ export default function Paciente() {
 
     enviandoRef.current = true;
     setEnviando(true);
-    setMsg({ t: 'Enviando solicitud…', ok: true });
+    setMsg({ t: 'Enviando reporte…', ok: true });
 
     try {
+      // Sube la foto (opcional) a Supabase Storage.
+      let foto_url = null;
+      if (foto) {
+        const ext =
+          (foto.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') ||
+          'jpg';
+        const ruta = `${s.u.id}/${Date.now()}.${ext}`;
+        const { error: errorFoto } = await sb.storage
+          .from('evidencias')
+          .upload(ruta, foto, { contentType: foto.type || 'image/jpeg' });
+        if (errorFoto) {
+          setMsg({
+            t: 'No se pudo subir la foto, intenta de nuevo: ' + errorFoto.message,
+            ok: false,
+          });
+          return;
+        }
+        foto_url = sb.storage.from('evidencias').getPublicUrl(ruta).data?.publicUrl;
+      }
+
       const datos = {
         paciente_id: s.u.id,
         nombre: s.p.nombre,
         cuadro: texto,
-        esp,
+        tipo,
         urg: Number(urg),
+        foto_url,
         lat: pos.lat,
         lng: pos.lng,
       };
@@ -279,20 +301,22 @@ export default function Paciente() {
         .single();
 
       if (error) {
-        setMsg({ t: 'No se pudo registrar la solicitud: ' + error.message, ok: false });
+        setMsg({ t: 'No se pudo registrar el reporte: ' + error.message, ok: false });
         return;
       }
 
       setCuadro('');
-      const medico = await asignar(caso.id, caso);
+      setFoto(null);
+      setFotoVista(null);
+      const grave = Number(urg) === 1;
       setMsg(
-        medico
+        grave
           ? {
-              t: `Médico asignado: ${medico.nombre} (${medico.esp}). Revisa el mapa.`,
+              t: '🚑 Emergencia grave registrada. Los hospitales la verán de inmediato en su panel.',
               ok: true,
             }
           : {
-              t: 'No hay médicos disponibles ahora; tu solicitud quedó en espera.',
+              t: 'Reporte enviado. Los hospitales lo verán y uno lo tomará cuando esté listo para atender.',
               ok: true,
             },
       );
@@ -309,39 +333,74 @@ export default function Paciente() {
       <main className="m3p">
         <aside className="z-form">
           <section className="card">
-            <h2>🩺 Solicitar atención</h2>
+            <h2>🚨 Reportar emergencia</h2>
             <form onSubmit={solicitar}>
+              <label className="sr-only" htmlFor="tipo">
+                Tipo de emergencia
+              </label>
+              <select id="tipo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+                {TIPO_EMERG.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.emoji} {t.etiqueta}
+                  </option>
+                ))}
+              </select>
+
+              <label className="sr-only" htmlFor="urg">
+                Gravedad
+              </label>
+              <select id="urg" value={urg} onChange={(e) => setUrg(e.target.value)}>
+                <option value="1">🚑 Gravedad alta · requiere ambulancia</option>
+                <option value="2">Gravedad media</option>
+                <option value="3">Gravedad baja</option>
+              </select>
+
               <label className="sr-only" htmlFor="cuadro">
-                Síntomas o motivo de consulta
+                Descripción de la emergencia
               </label>
               <textarea
                 id="cuadro"
                 rows={3}
                 maxLength={300}
-                placeholder="Síntomas / motivo de consulta"
+                placeholder="¿Qué pasó? ¿Cuántas personas hay afectadas?"
                 required
                 value={cuadro}
                 onChange={(e) => setCuadro(e.target.value)}
               />
 
-              <label className="sr-only" htmlFor="esp">
-                Especialidad
+              <label className="btn-file">
+                📷 Tomar o adjuntar foto del accidente
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setFoto(f);
+                    if (fotoVista) URL.revokeObjectURL(fotoVista);
+                    setFotoVista(f ? URL.createObjectURL(f) : null);
+                  }}
+                />
               </label>
-              <select id="esp" value={esp} onChange={(e) => setEsp(e.target.value)}>
-                <option>Cualquiera</option>
-                <option>Medicina General</option>
-                <option>Pediatría</option>
-                <option>Geriatría</option>
-              </select>
 
-              <label className="sr-only" htmlFor="urg">
-                Urgencia
-              </label>
-              <select id="urg" value={urg} onChange={(e) => setUrg(e.target.value)}>
-                <option value="1">Urgencia alta</option>
-                <option value="2">Urgencia media</option>
-                <option value="3">Urgencia baja</option>
-              </select>
+              {fotoVista && (
+                <div className="vista-foto">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={fotoVista} alt="Foto de la emergencia" />
+                  <button
+                    type="button"
+                    className="ghost small"
+                    onClick={() => {
+                      URL.revokeObjectURL(fotoVista);
+                      setFoto(null);
+                      setFotoVista(null);
+                    }}
+                  >
+                    Quitar foto
+                  </button>
+                </div>
+              )}
 
               <div className="bloque">
                 <h3>📍 Tu ubicación</h3>
@@ -388,7 +447,7 @@ export default function Paciente() {
               </div>
 
               <button type="submit" disabled={enviando}>
-                {enviando ? 'Enviando…' : 'Solicitar atención'}
+                {enviando ? 'Enviando…' : '🚑 Enviar reporte de emergencia'}
               </button>
 
               <p
@@ -402,29 +461,46 @@ export default function Paciente() {
           </section>
 
           <section className="card">
-            <h2>📋 Mis solicitudes</h2>
-            {casos.length === 0 && <p className="hint">Aún no tienes solicitudes.</p>}
-            {casos.map((c) => (
-              <div className="item" key={c.id}>
-                <b>{ESTADO[c.estado] || c.estado}</b>{' '}
-                <span className={`tag u${c.urg}`}>{URG[c.urg] || '—'}</span>
-                <p>{c.cuadro}</p>
-                {c.medico_nombre && (
+            <h2>📋 Mis reportes</h2>
+            {casos.length === 0 && <p className="hint">Aún no has reportado emergencias.</p>}
+            {casos.map((c) => {
+              const te = tipoEmerg(c.tipo);
+              return (
+                <div className="item" key={c.id}>
+                  <b>{ESTADO[c.estado] || c.estado}</b>{' '}
+                  <span className={`tag u${c.urg}`}>{URG[c.urg] || '—'}</span>
                   <p>
-                    Médico: {c.medico_nombre} · {fmtKm(c.km)} km · llega en ~
-                    {fmtEta(c.eta)}
+                    {te.emoji} {te.etiqueta}
                   </p>
-                )}
-              </div>
-            ))}
+                  <p>{c.cuadro}</p>
+                  {c.foto_url && (
+                    <a href={c.foto_url} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        className="mini"
+                        src={c.foto_url}
+                        alt="Foto del reporte"
+                        loading="lazy"
+                      />
+                    </a>
+                  )}
+                  {c.hospital_nombre && (
+                    <p>
+                      🏥 {c.hospital_nombre} tomó tu reporte · {fmtKm(c.km)} km
+                      · llega en ~{fmtEta(c.eta)}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </section>
         </aside>
 
         <section className="center z-map">
           <div id="map"></div>
           <p className="hint">
-            🔵 Médico libre · ⚪ Médico ocupado · 🏠 Paciente · 📍 Tu ubicación ·{' '}
-            🏥 Hospital · 🩺 Centro de salud · 🏨 Policlínica
+            🏥 Hospital · 🩺 Centro de salud · 🏨 Policlínica · 📍 Tu ubicación ·
+            🚑 Ruta del hospital (azul)
           </p>
         </section>
 
@@ -556,8 +632,8 @@ export default function Paciente() {
                 </div>
 
                 <p className="hint">
-                  Si es una emergencia, usa <b>Solicitar atención</b> y esperá
-                  la ambulancia.
+                  Para una emergencia grave, reporta desde{' '}
+                  <b>🚨 Reportar emergencia</b> y la ambulancia irá a tu punto.
                 </p>
               </div>
             )}

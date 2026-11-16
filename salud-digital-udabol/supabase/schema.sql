@@ -21,7 +21,7 @@ create table if not exists public.usuarios (
   nombre      text not null,
   email       text not null default '',
   rol         text not null default 'paciente'
-              check (rol in ('paciente', 'medico', 'admin')),
+              check (rol in ('paciente', 'hospital')),
   esp         text,
   libre       boolean not null default false,
   lat         double precision check (lat is null or lat between -90 and 90),
@@ -29,45 +29,77 @@ create table if not exists public.usuarios (
   creado      timestamptz not null default now(),
   actualizado timestamptz not null default now(),
   constraint nombre_valido check (char_length(btrim(nombre)) between 2 and 80),
-  constraint coordenadas_completas check ((lat is null) = (lng is null)),
-  constraint especialidad_medico check (rol <> 'medico' or esp is not null)
+  constraint coordenadas_completas check ((lat is null) = (lng is null))
 );
 
 comment on table public.usuarios is
   'Perfiles de la aplicación. Se crean al terminar el registro con Google.';
 
 -- ------------------------------------------------------------
---  Solicitudes de atención
+--  Reportes de emergencia
 -- ------------------------------------------------------------
 create table if not exists public.casos (
-  id            uuid primary key default gen_random_uuid(),
-  paciente_id   uuid not null references public.usuarios (id) on delete cascade,
-  nombre        text not null,
-  cuadro        text not null,
-  esp           text not null default 'Cualquiera',
-  urg           smallint not null default 2 check (urg between 1 and 3),
-  estado        text not null default 'pendiente'
-                check (estado in ('pendiente', 'asignado', 'finalizado')),
-  medico_id     uuid references public.usuarios (id) on delete set null,
-  medico_nombre text,
-  km            double precision,
-  eta           integer,
-  ruta          text,
-  tipo_ruta     text,
-  lat           double precision not null check (lat between -90 and 90),
-  lng           double precision not null check (lng between -180 and 180),
-  creado        timestamptz not null default now(),
-  actualizado   timestamptz not null default now(),
+  id             uuid primary key default gen_random_uuid(),
+  paciente_id    uuid not null references public.usuarios (id) on delete cascade,
+  nombre         text not null,
+  cuadro         text not null,
+  esp            text not null default 'Cualquiera',
+  urg            smallint not null default 2 check (urg between 1 and 3),
+  estado         text not null default 'pendiente'
+                 check (estado in ('pendiente', 'asignado', 'finalizado')),
+  tipo           text not null default 'otro',
+  foto_url       text,
+  hospital_id    uuid references public.usuarios (id) on delete set null,
+  hospital_nombre text,
+  km             double precision,
+  eta            integer,
+  ruta           text,
+  tipo_ruta      text,
+  lat            double precision not null check (lat between -90 and 90),
+  lng            double precision not null check (lng between -180 and 180),
+  creado         timestamptz not null default now(),
+  actualizado    timestamptz not null default now(),
   constraint cuadro_valido check (char_length(btrim(cuadro)) between 3 and 500)
 );
 
 comment on table public.casos is
-  'Solicitudes de atención médica domiciliaria con su asignación y ruta.';
+  'Reportes de emergencia con foto opcional, tipo, gravedad y asignación de médico.';
 
 -- ------------------------------------------------------------
 --  Compatibilidad con instalaciones anteriores
 --  (si ya existen las columnas, estas sentencias no hacen nada)
 -- ------------------------------------------------------------
+-- ------------------------------------------------------------
+--  Migración desde instalaciones anteriores (panel de médico/admin)
+--  Si ya ejecutaste el esquema viejo, esto convierte la base sin
+--  perder datos. En una instalación nueva no hace nada.
+-- ------------------------------------------------------------
+alter table public.usuarios drop constraint if exists usuarios_rol_check;
+alter table public.usuarios drop constraint if exists usuarios_especialidad_medico;
+update public.usuarios set rol = 'hospital' where rol = 'medico';
+alter table public.usuarios add constraint usuarios_rol_check
+  check (rol in ('paciente', 'hospital'));
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'casos'
+      and column_name = 'medico_id'
+  ) then
+    alter table public.casos rename column medico_id to hospital_id;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'casos'
+      and column_name = 'medico_nombre'
+  ) then
+    alter table public.casos rename column medico_nombre to hospital_nombre;
+  end if;
+end
+$$;
+
 alter table public.usuarios add column if not exists creado timestamptz not null default now();
 alter table public.usuarios add column if not exists actualizado timestamptz not null default now();
 alter table public.usuarios add column if not exists esp text;
@@ -82,6 +114,27 @@ alter table public.casos add column if not exists km double precision;
 alter table public.casos add column if not exists eta integer;
 alter table public.casos add column if not exists ruta text;
 alter table public.casos add column if not exists tipo_ruta text;
+alter table public.casos add column if not exists tipo text not null default 'otro';
+alter table public.casos add column if not exists foto_url text;
+
+-- ------------------------------------------------------------
+--  Bucket de fotos de emergencias (Supabase Storage)
+-- ------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('evidencias', 'evidencias', true)
+on conflict (id) do nothing;
+
+drop policy if exists "evidencias_subir_autenticada" on storage.objects;
+create policy "evidencias_subir_autenticada"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'evidencias');
+
+drop policy if exists "evidencias_leer_autenticada" on storage.objects;
+create policy "evidencias_leer_autenticada"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'evidencias');
 
 -- ------------------------------------------------------------
 --  Índices
@@ -98,8 +151,8 @@ create index if not exists idx_casos_estado_urgencia
 create index if not exists idx_casos_paciente
   on public.casos (paciente_id, creado desc);
 
-create index if not exists idx_casos_medico
-  on public.casos (medico_id, estado);
+create index if not exists idx_casos_hospital
+  on public.casos (hospital_id, estado);
 
 -- ------------------------------------------------------------
 --  Trigger de actualización

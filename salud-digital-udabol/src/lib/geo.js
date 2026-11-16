@@ -1,14 +1,25 @@
-import { sb } from './supabase';
-
-export const ADMIN_CODE = process.env.NEXT_PUBLIC_ADMIN_CODE || 'SALUD2026';
-
 export const ESTADO = {
   pendiente: '⏳ En espera',
-  asignado: '🚑 En camino',
+  asignado: '🚑 Tomado',
   finalizado: '✔ Finalizado',
 };
 
 export const URG = ['', 'ALTA', 'MEDIA', 'BAJA'];
+
+/**
+ * Tipos de emergencia que el paciente puede reportar.
+ * Se usan en el panel del paciente y en el panel del hospital.
+ */
+export const TIPO_EMERG = [
+  { id: 'transito', etiqueta: 'Accidente de tránsito', emoji: '🚗' },
+  { id: 'atropello', etiqueta: 'Atropello', emoji: '🚶' },
+  { id: 'caida', etiqueta: 'Caída grave', emoji: '🤕' },
+  { id: 'trabajo', etiqueta: 'Accidente laboral', emoji: '🏗️' },
+  { id: 'otro', etiqueta: 'Otra emergencia', emoji: '🆘' },
+];
+
+export const tipoEmerg = (id) =>
+  TIPO_EMERG.find((t) => t.id === id) || TIPO_EMERG[4];
 
 export const ll = (o) => [Number(o.lat), Number(o.lng)];
 
@@ -89,94 +100,22 @@ export async function rutaOsrm(a, b, timeout = 7000) {
 }
 
 /**
- * Asignación inteligente: médico libre más cercano (priorizando especialidad)
- * y ruta por calles con OSRM.
+ * Ruta entre dos puntos por calles (OSRM) con respaldo a línea recta
+ * si OSRM no responde. La usa el hospital al tomar un caso.
  *
- * El médico se bloquea de forma condicional (`libre = true`) antes de asignar
- * el caso para evitar que dos solicitudes simultáneas tomen al mismo médico.
- * Si la asignación del caso falla, el médico se libera de nuevo.
- *
- * @returns {Promise<object|null>} médico asignado o null si no fue posible.
+ * @param {[number,number]} a origen [lat,lng]
+ * @param {[number,number]} b destino [lat,lng]
+ * @returns {Promise<{puntos:[number,number][], km:number, min:number, tipo_ruta:string}>}
  */
-export async function asignar(id, c) {
-  if (!id || !c || c.lat == null || c.lng == null) return null;
+export async function rutaEntre(a, b) {
+  const r = await rutaOsrm(a, b);
+  if (r) return { ...r, tipo_ruta: 'calles (OSRM)' };
 
-  const { data: ms, error } = await sb
-    .from('usuarios')
-    .select('*')
-    .eq('rol', 'medico')
-    .eq('libre', true)
-    .not('lat', 'is', null)
-    .not('lng', 'is', null);
-
-  if (error || !ms || !ms.length) return null;
-
-  const candidatos =
-    c.esp && c.esp !== 'Cualquiera' ? ms.filter((m) => m.esp === c.esp) : ms;
-  const pool = candidatos.length ? candidatos : ms;
-  const distancia = (m) => km(ll(m), ll(c));
-  const medico = pool.reduce((a, b) => (distancia(a) <= distancia(b) ? a : b));
-
-  // Ruta y ETA (con respaldo a línea recta si OSRM no responde).
-  let dist = distancia(medico);
-  let eta = Math.round(dist * 2.5 + 5);
-  let ruta = [ll(medico), ll(c)];
-  let tipo = 'línea recta';
-
-  try {
-    const url =
-      'https://router.project-osrm.org/route/v1/driving/' +
-      `${medico.lng},${medico.lat};${c.lng},${c.lat}` +
-      '?overview=full&geometries=geojson';
-    const respuesta = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (respuesta.ok) {
-      const r = await respuesta.json();
-      const tramo = r?.routes?.[0];
-      if (
-        tramo?.geometry?.coordinates?.length &&
-        Number.isFinite(tramo.distance) &&
-        Number.isFinite(tramo.duration)
-      ) {
-        ruta = tramo.geometry.coordinates.map(([x, y]) => [y, x]);
-        dist = tramo.distance / 1000;
-        eta = Math.max(1, Math.round(tramo.duration / 60) + 2);
-        tipo = 'calles (OSRM)';
-      }
-    }
-  } catch {
-    // Sin conexión a OSRM: se mantiene el cálculo en línea recta.
-  }
-
-  // Bloqueo atómico del médico.
-  const { data: bloqueado } = await sb
-    .from('usuarios')
-    .update({ libre: false })
-    .eq('id', medico.id)
-    .eq('libre', true)
-    .select('id');
-
-  if (!bloqueado || !bloqueado.length) return null;
-
-  const { data: asignado } = await sb
-    .from('casos')
-    .update({
-      estado: 'asignado',
-      medico_id: medico.id,
-      medico_nombre: medico.nombre,
-      km: Number(dist.toFixed(2)),
-      eta,
-      ruta: JSON.stringify(ruta),
-      tipo_ruta: tipo,
-    })
-    .eq('id', id)
-    .eq('estado', 'pendiente')
-    .select('id');
-
-  if (!asignado || !asignado.length) {
-    // El caso ya no estaba pendiente: liberamos al médico.
-    await sb.from('usuarios').update({ libre: true }).eq('id', medico.id);
-    return null;
-  }
-
-  return medico;
+  const dist = km(a, b);
+  return {
+    puntos: [a, b],
+    km: dist,
+    min: Math.max(1, Math.round(dist * 2.5 + 5)),
+    tipo_ruta: 'línea recta',
+  };
 }

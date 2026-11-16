@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { sb } from '../lib/supabase';
-import { km, ll, esc, parseRuta } from '../lib/geo';
+import { km, parseRuta } from '../lib/geo';
 
 // Acción "Mi ubicación" asociada a cada mapa. Se guarda fuera del objeto del
 // mapa para no mutar valores que React considera de solo lectura.
@@ -240,55 +240,6 @@ export function useVivo(tabla, cargar, activo = true) {
       if (canal) sb.removeChannel(canal);
     };
   }, [tabla, activo]);
-}
-
-/** Todos los médicos registrados, dibujados en el mapa. */
-export function useMedicos(mapa, excluirId, activo = true) {
-  const [medicos, setMedicos] = useState([]);
-  const capa = useRef(null);
-  const anterior = useRef('');
-
-  const recargar = useCallback(async () => {
-    const { data, error } = await sb
-      .from('usuarios')
-      .select('*')
-      .eq('rol', 'medico');
-    if (error) return;
-
-    const lista = data || [];
-    const serializado = JSON.stringify(lista);
-    if (serializado !== anterior.current) {
-      anterior.current = serializado;
-      setMedicos(lista);
-    }
-  }, []);
-
-  useVivo('usuarios', recargar, activo);
-
-  useEffect(() => {
-    if (!mapa) return;
-    const { L, map } = mapa;
-
-    if (!capa.current) capa.current = L.layerGroup().addTo(map);
-    const capaActual = capa.current;
-    capaActual.clearLayers();
-
-    medicos
-      .filter((m) => m.id !== excluirId && m.lat != null && m.lng != null)
-      .forEach((m) => {
-        L.marker(ll(m), {
-          icon: icono(L, 'med' + (m.libre ? '' : ' busy'), '👨‍⚕️'),
-        })
-          .addTo(capaActual)
-          .bindPopup(
-            `<b>${esc(m.nombre)}</b><br>${esc(m.esp)}<br>${
-              m.libre ? '🟢 Libre' : '🔴 Ocupado'
-            }`,
-          );
-      });
-  }, [mapa, medicos, excluirId]);
-
-  return { ms: medicos, recargar };
 }
 
 /**

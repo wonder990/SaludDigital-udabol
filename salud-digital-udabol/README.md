@@ -5,12 +5,11 @@ Plataforma de **atención médica domiciliaria** con asignación inteligente de 
 ## ✨ Funcionalidades
 
 - **Acceso con Google** mediante Supabase Auth y creación de perfil por rol.
-- **Tres paneles independientes** con control de acceso por rol:
-  - **Paciente:** solicita atención, indica síntomas, especialidad y urgencia; ve la ruta del médico asignado.
-  - **Médico:** comparte su ubicación GPS, se marca disponible/ocupado y atiende casos asignados.
-  - **Administrador:** supervisa casos y personal, y asigna médicos de forma manual o masiva.
-- **Asignación inteligente:** elige al médico libre más cercano, prioriza la especialidad solicitada y calcula distancia, ETA y ruta por calles.
-- **Mapa en vivo** con Leaflet + OpenStreetMap: médicos libres/ocupados, pacientes, ubicación propia y rutas.
+- **Dos paneles independientes** con control de acceso por rol:
+  - **Paciente:** reporta una emergencia con tipo, gravedad, foto opcional y ubicación; ve los centros de salud cercanos, rutas y el estado de sus reportes.
+  - **Hospital:** marca la ubicación de su centro, ve las emergencias en espera en el mapa y toma los casos que pueda atender; al finalizar los cierra.
+- **Toma de casos sin asignación automática:** el hospital decide; al tomar un caso queda bloqueado para los demás y se traza la ruta centro → paciente con ETA.
+- **Mapa en vivo** con Leaflet + OpenStreetMap: emergencias, pacientes, centros de salud, ubicación propia y rutas.
 - **Actualización en tiempo real** con Supabase Realtime y respaldo por sondeo cada 4 s.
 - **Modo simulación** de GPS para probar la aplicación en computadora.
 - Interfaz responsive con Tailwind CSS 4.
@@ -76,14 +75,15 @@ NEXT_PUBLIC_ADMIN_CODE=CAMBIA_ESTE_CODIGO
 
 ## 👥 Roles y flujo de uso
 
-1. En la pantalla de inicio elige **Registrarse** y tu rol (paciente, médico o administrador).
-2. El administrador necesita el código configurado en `NEXT_PUBLIC_ADMIN_CODE`.
+1. En la pantalla de inicio elige **Registrarse** y tu rol (paciente o hospital).
+2. Un **hospital** se registra eligiendo su centro de la lista de Oruro (o escribiendo el nombre).
 3. Al entrar con Google se crea el perfil en `usuarios`.
-4. El **paciente** solicita atención; la app busca al médico libre más cercano.
-5. El **médico** activa su disponibilidad y comparte la ubicación; al finalizar libera el caso.
-6. El **administrador** puede reasignar o asignar en lote los casos pendientes.
+4. El **paciente** reporta una emergencia con tipo, gravedad, foto (opcional) y ubicación.
+5. El **hospital** marca la ubicación de su centro, ve las emergencias en espera en el mapa y toma las que pueda atender.
+6. Al tomar un caso queda **"🚑 Tomado"** para los demás hospitales y se traza la ruta del centro al paciente con tiempo estimado.
+7. Cuando termina, el hospital marca **Finalizar atención**.
 
-> Los médicos deben abrir su panel al menos una vez para registrar su ubicación. El administrador puede ver quién no tiene ubicación.
+> El hospital debe marcar su ubicación en el mapa al menos una vez para poder tomar casos.
 
 ## 🧪 Scripts
 
@@ -104,8 +104,7 @@ salud-digital-udabol/
 │  ├─ app/
 │  │  ├─ page.js              # Login / registro con Google
 │  │  ├─ paciente/page.js     # Panel del paciente
-│  │  ├─ medico/page.js       # Panel del médico
-│  │  ├─ admin/page.js        # Panel del administrador
+│  │  ├─ hospital/page.js     # Panel del hospital
 │  │  ├─ layout.js            # Metadatos y estilos globales
 │  │  ├─ error.js             # Frontera de errores
 │  │  └─ not-found.js         # Página 404
@@ -122,16 +121,15 @@ salud-digital-udabol/
 
 ## 🗃️ Modelo de datos
 
-- **`usuarios`**: perfil 1:1 con `auth.users` (`nombre`, `email`, `rol`, `esp`, `libre`, `lat`, `lng`).
-- **`casos`**: solicitud del paciente (`cuadro`, `esp`, `urg`, `estado`, médico asignado, `km`, `eta`, `ruta`, coordenadas).
-- Estados del caso: `pendiente → asignado → finalizado`.
-- Urgencias: `1 = alta`, `2 = media`, `3 = baja`.
+- **`usuarios`**: perfil 1:1 con `auth.users` (`nombre`, `email`, `rol`, `lat`, `lng`).
+- **`casos`**: reporte de emergencia (`tipo`, `cuadro`, `urg`, `estado`, `foto_url`, hospital que lo tomó, `km`, `eta`, `ruta`, coordenadas).
+- Estados del caso: `pendiente → asignado → finalizado` (en la interfaz: *En espera → Tomado → Finalizado*).
+- Gravedad: `1 = alta (requiere ambulancia)`, `2 = media`, `3 = baja`.
 
 ## 🔐 Seguridad
 
 - El repositorio incluye `.env.example`; **nunca** subas `.env.local` ni claves privadas.
-- `NEXT_PUBLIC_ADMIN_CODE` se valida en el navegador: sirve como filtro de demostración, **no** como seguridad real. Para producción, valida el alta de administradores en el servidor.
-- Las políticas RLS incluidas son de **modo demo**, porque el flujo actual permite que un paciente marque como ocupado al médico asignado. Para producción se recomienda mover la asignación a una función RPC `SECURITY DEFINER`, restringir las políticas por rol y no exponer el correo de todos los perfiles.
+- Las políticas RLS incluidas son de **modo demo** (el hospital toma el caso desde el navegador). Para producción se recomienda mover el "tomar caso" a una función RPC `SECURITY DEFINER`, restringir las políticas por rol y no exponer el correo de todos los perfiles.
 - Si un secreto llegó a un repositorio, **revócalo de inmediato** y limpia el historial de Git.
 
 ## ☁️ Despliegue en Vercel

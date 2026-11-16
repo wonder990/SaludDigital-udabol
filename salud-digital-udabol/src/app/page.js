@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { sb, SUPABASE_URL } from '../lib/supabase';
-import { ADMIN_CODE } from '../lib/geo';
+import { CENTROS } from '../lib/centros';
 
-const PAGINA = { paciente: '/paciente', medico: '/medico', admin: '/admin' };
-const ROLES = ['paciente', 'medico', 'admin'];
+const PAGINA = { paciente: '/paciente', hospital: '/hospital' };
+const ROLES = ['paciente', 'hospital'];
 const KEY = 'saludmovil_registro'; // datos del registro mientras el usuario pasa por Google
-const VACIO = { nombre: '', rol: 'paciente', esp: 'Medicina General', cod: '' };
-const ESPECIALIDADES = ['Medicina General', 'Pediatría', 'Geriatría'];
+const VACIO = { nombre: '', rol: 'paciente', centro: '', otro: '' };
+const OTRO = '__otro__'; // opción "Otro centro" del selector de hospital
 
 function leerPendiente() {
   try {
@@ -41,22 +41,28 @@ function normalizarPendiente(p) {
   return {
     nombre: String(p.nombre ?? ''),
     rol: ROLES.includes(p.rol) ? p.rol : 'paciente',
-    esp: String(p.esp ?? 'Medicina General'),
-    cod: String(p.cod ?? ''),
+    centro: String(p.centro ?? ''),
+    otro: String(p.otro ?? ''),
   };
+}
+
+/** Nombre final del hospital según la elección en el registro. */
+function nombreHospital(f) {
+  return f.centro === OTRO ? f.otro.trim() : f.centro;
 }
 
 function validar(f) {
   if (!f || typeof f !== 'object') {
     return 'Los datos de registro no son válidos.';
   }
-  if (f.nombre.trim().length < 2) {
-    return 'Escribe un nombre de usuario de al menos 2 caracteres.';
-  }
   if (!ROLES.includes(f.rol)) return 'Selecciona un rol válido.';
-  if (f.rol === 'medico' && !f.esp) return 'Selecciona una especialidad.';
-  if (f.rol === 'admin' && f.cod.trim() !== ADMIN_CODE) {
-    return 'Código de administrador incorrecto.';
+  if (f.rol === 'hospital') {
+    if (!f.centro) return 'Selecciona tu centro de salud.';
+    if (f.centro === OTRO && f.otro.trim().length < 2) {
+      return 'Escribe el nombre de tu centro de salud.';
+    }
+  } else if (f.nombre.trim().length < 2) {
+    return 'Escribe un nombre de usuario de al menos 2 caracteres.';
   }
   return '';
 }
@@ -105,12 +111,14 @@ export default function Login() {
         return false;
       }
 
+      const nombreFinal = datos.rol === 'hospital' ? nombreHospital(datos) : datos.nombre.trim();
+
       const { error } = await sb.from('usuarios').insert({
         id: ses.user.id,
-        nombre: datos.nombre.trim(),
+        nombre: nombreFinal,
         email: ses.user.email ?? '',
         rol: datos.rol,
-        esp: datos.rol === 'medico' ? datos.esp : null,
+        esp: null,
         libre: false,
       });
 
@@ -182,7 +190,7 @@ export default function Login() {
               nombre: anterior.nombre,
               email: anterior.email,
               rol: anterior.rol,
-              esp: anterior.esp,
+              esp: null,
               libre: false,
             });
             if (!ins.error) perfil = { ...anterior, id: ses.user.id };
@@ -354,53 +362,59 @@ export default function Login() {
 
   const campos = (
     <>
-      <label className="sr-only" htmlFor="nombre">
-        Nombre de usuario
-      </label>
-      <input
-        id="nombre"
-        placeholder="Nombre de usuario"
-        autoComplete="name"
-        maxLength={60}
-        value={f.nombre}
-        onChange={set('nombre')}
-      />
+      {f.rol === 'paciente' ? (
+        <>
+          <label className="sr-only" htmlFor="nombre">
+            Nombre de usuario
+          </label>
+          <input
+            id="nombre"
+            placeholder="Nombre de usuario"
+            autoComplete="name"
+            maxLength={60}
+            value={f.nombre}
+            onChange={set('nombre')}
+          />
+        </>
+      ) : null}
 
       <label className="sr-only" htmlFor="rol">
         Rol
       </label>
       <select id="rol" value={f.rol} onChange={set('rol')}>
         <option value="paciente">Soy paciente</option>
-        <option value="medico">Soy médico</option>
-        <option value="admin">Soy administrador</option>
+        <option value="hospital">Soy hospital / centro de salud</option>
       </select>
 
-      {f.rol === 'medico' && (
+      {f.rol === 'hospital' && (
         <>
-          <label className="sr-only" htmlFor="esp">
-            Especialidad
+          <label className="sr-only" htmlFor="centro">
+            Centro de salud
           </label>
-          <select id="esp" value={f.esp} onChange={set('esp')}>
-            {ESPECIALIDADES.map((e) => (
-              <option key={e}>{e}</option>
+          <select id="centro" value={f.centro} onChange={set('centro')}>
+            <option value="">Elige tu centro…</option>
+            {CENTROS.map((c) => (
+              <option key={c.id} value={c.nombre}>
+                {c.nombre}
+              </option>
             ))}
+            <option value={OTRO}>Otro centro (escribir nombre)</option>
           </select>
-        </>
-      )}
 
-      {f.rol === 'admin' && (
-        <>
-          <label className="sr-only" htmlFor="cod">
-            Código de administrador
-          </label>
-          <input
-            id="cod"
-            type="password"
-            placeholder="Código de administrador"
-            autoComplete="off"
-            value={f.cod}
-            onChange={set('cod')}
-          />
+          {f.centro === OTRO && (
+            <>
+              <label className="sr-only" htmlFor="otro">
+                Nombre del centro de salud
+              </label>
+              <input
+                id="otro"
+                placeholder="Nombre del centro de salud"
+                maxLength={80}
+                value={f.otro}
+                onChange={set('otro')}
+              />
+            </>
+          )}
         </>
       )}
     </>
@@ -418,7 +432,7 @@ export default function Login() {
             />
             SaludMóvil Bolivia
           </h1>
-          <small>Atención médica domiciliaria · SIG</small>
+          <small>Emergencias médicas · SIG</small>
         </div>
       </header>
 

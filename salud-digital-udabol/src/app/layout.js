@@ -3,16 +3,17 @@ import './globals.css';
 
 export const metadata = {
   title: {
-    default: 'SaludMóvil Bolivia · Atención médica domiciliaria',
+    default: 'SaludMóvil Bolivia · Emergencias médicas',
     template: '%s · SaludMóvil Bolivia',
   },
   description:
-    'Plataforma de atención médica domiciliaria con asignación inteligente de médicos y seguimiento en tiempo real sobre el mapa.',
+    'Plataforma de reporte de emergencias médicas con foto del accidente, asignación inteligente de médicos y seguimiento en tiempo real sobre el mapa.',
   applicationName: 'SaludMóvil Bolivia',
   authors: [{ name: 'Salud Digital UDABOL' }],
   keywords: [
     'salud',
-    'atención domiciliaria',
+    'emergencias',
+    'ambulancia',
     'médicos',
     'SIG',
     'Bolivia',
@@ -21,7 +22,7 @@ export const metadata = {
   openGraph: {
     title: 'SaludMóvil Bolivia',
     description:
-      'Solicita atención médica a domicilio y sigue la llegada del médico en el mapa.',
+      'Reporta una emergencia con foto y ubicación, y sigue la llegada de la ayuda en el mapa.',
     locale: 'es_BO',
     type: 'website',
   },
